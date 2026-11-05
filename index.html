@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <meta name="theme-color" content="#171717">
+    <meta name="description" content="Instagram media saver">
+
+    <title>Instagram Media Saver</title>
+
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+    <main class="container">
+
+        <header class="header">
+            <div class="app-icon">IS</div>
+            <div>
+                <h1>Media Saver</h1>
+                <p class="subtitle">Instagram media saver</p>
+            </div>
+        </header>
+
+        <section class="panel">
+
+            <h2>Instagram URL</h2>
+
+            <p class="description">
+                Instagramアプリの共有メニューからURLを送るか、
+                下の欄にURLを貼り付けてください。
+            </p>
+
+            <textarea
+                id="urlInput"
+                placeholder="https://www.instagram.com/p/..."
+                rows="3"
+                spellcheck="false"
+            ></textarea>
+
+            <div class="button-row">
+                <button id="checkButton" class="primary-button">
+                    URLを確認
+                </button>
+
+                <button id="clearButton" class="secondary-button">
+                    クリア
+                </button>
+            </div>
+
+        </section>
+
+        <section id="resultPanel" class="panel hidden">
+
+            <h2>受け取った投稿</h2>
+
+            <div class="result-item">
+                <span class="result-label">投稿タイプ</span>
+                <span id="postType" class="result-value">-</span>
+            </div>
+
+            <div class="result-item">
+                <span class="result-label">Instagram URL</span>
+                <a
+                    id="instagramLink"
+                    class="result-value url-link"
+                    href="#"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >-</a>
+            </div>
+
+            <p id="resultMessage" class="result-message"></p>
+
+        </section>
+
+        <section class="notice">
+            <h3>About this version</h3>
+            <p>
+                このバージョンでは、Instagramから共有されたURLを
+                受け取る機能を確認しています。
+            </p>
+            <p>
+                メディアの検出・ダウンロード機能はまだ実装されていません。
+            </p>
+        </section>
+
+        <footer>
+            <span>Instagram Media Saver</span>
+            <span id="swStatus">Checking...</span>
+        </footer>
+
+    </main>
+
+    <script src="./app.js"></script>
+</body>
+</html>
