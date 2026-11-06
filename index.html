@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <meta name="theme-color" content="#171717">
-    <meta name="description" content="Instagram media saver">
+    <meta name="description" content="Instagram access test">
 
-    <title>Instagram Media Saver</title>
+    <title>Instagram Access Test</title>
 
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="stylesheet" href="./style.css">
@@ -19,18 +19,17 @@
         <header class="header">
             <div class="app-icon">IS</div>
             <div>
-                <h1>Media Saver</h1>
-                <p class="subtitle">Instagram media saver</p>
+                <h1>Instagram Access Test</h1>
+                <p class="subtitle">Media Saver development test</p>
             </div>
         </header>
 
         <section class="panel">
-
             <h2>Instagram URL</h2>
 
             <p class="description">
-                Instagramアプリの共有メニューからURLを送るか、
-                下の欄にURLを貼り付けてください。
+                Instagramの公開投稿URLを入力してください。
+                ChromeでInstagramにログインした状態でテストします。
             </p>
 
             <textarea
@@ -42,19 +41,17 @@
 
             <div class="button-row">
                 <button id="checkButton" class="primary-button">
-                    URLを確認
+                    アクセス検証開始
                 </button>
 
                 <button id="clearButton" class="secondary-button">
                     クリア
                 </button>
             </div>
-
         </section>
 
         <section id="resultPanel" class="panel hidden">
-
-            <h2>受け取った投稿</h2>
+            <h2>投稿情報</h2>
 
             <div class="result-item">
                 <span class="result-label">投稿タイプ</span>
@@ -62,7 +59,7 @@
             </div>
 
             <div class="result-item">
-                <span class="result-label">Instagram URL</span>
+                <span class="result-label">投稿URL</span>
                 <a
                     id="instagramLink"
                     class="result-value url-link"
@@ -71,20 +68,51 @@
                     rel="noopener noreferrer"
                 >-</a>
             </div>
-
-            <p id="resultMessage" class="result-message"></p>
-
         </section>
 
-        <section class="notice">
-            <h3>About this version</h3>
-            <p>
-                このバージョンでは、Instagramから共有されたURLを
-                受け取る機能を確認しています。
-            </p>
-            <p>
-                メディアの検出・ダウンロード機能はまだ実装されていません。
-            </p>
+        <section id="testPanel" class="panel hidden">
+            <h2>アクセス検証結果</h2>
+
+            <div class="test-result">
+                <h3>Test A：Cookieなし</h3>
+                <div id="resultA" class="test-output">
+                    未実行
+                </div>
+            </div>
+
+            <div class="test-result">
+                <h3>Test B：Cookie送信を許可</h3>
+                <div id="resultB" class="test-output">
+                    未実行
+                </div>
+            </div>
+        </section>
+
+        <section id="summaryPanel" class="panel hidden">
+            <h2>検証サマリー</h2>
+            <div id="summary" class="summary-text"></div>
+        </section>
+
+        <section class="panel">
+            <h2>検証について</h2>
+
+            <ul class="description-list">
+                <li>
+                    Test AはCookieを送信しません。
+                </li>
+                <li>
+                    Test BはブラウザーにCookieの送信を許可します。
+                </li>
+                <li>
+                    Cookieの値やログイン情報は読み取りません。
+                </li>
+                <li>
+                    Instagramから取得したHTML本文は画面に表示しません。
+                </li>
+                <li>
+                    CORSエラーと通信エラーを完全に区別できない場合があります。
+                </li>
+            </ul>
         </section>
 
         <footer>

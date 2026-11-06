@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "instagram-media-saver-v1";
+const CACHE_NAME = "instagram-media-saver-v2";
 
 const APP_FILES = [
     "./",
