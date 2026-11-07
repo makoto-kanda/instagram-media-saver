@@ -1,11 +1,11 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <meta name="theme-color" content="#171717">
-    <meta name="description" content="Instagram Media Saver">
 
     <title>Instagram Media Saver</title>
 
@@ -14,114 +14,144 @@
 </head>
 
 <body>
+
     <main class="container">
 
-        <header class="header">
-            <div class="app-icon">IS</div>
-            <div>
-                <h1>Instagram Media Saver</h1>
-                <p class="subtitle">Media Saver development test</p>
-            </div>
+        <header>
+            <h1>Instagram Media Saver</h1>
+            <p>
+                Instagramの投稿URLを受け取り、Firefoxで開きます。
+            </p>
         </header>
 
-        <section class="panel">
-            <h2>Instagram URL</h2>
 
-            <p class="description">
-                Instagramの公開投稿URLを入力してください。
-                ChromeでInstagramにログインした状態でテストします。
-            </p>
+        <!-- Instagram URL入力 -->
+
+        <section class="input-panel">
+
+            <label for="urlInput">
+                Instagram URL
+            </label>
 
             <textarea
                 id="urlInput"
-                placeholder="https://www.instagram.com/p/..."
+                placeholder="Instagramの投稿URLを入力、または共有してください"
                 rows="3"
-                spellcheck="false"
             ></textarea>
 
-            <div class="button-row">
-                <button id="checkButton" class="primary-button">
+            <div class="button-group">
+
+                <button id="checkButton" type="button">
                     アクセス検証開始
                 </button>
 
-                <button id="clearButton" class="secondary-button">
+                <button id="clearButton" type="button">
                     クリア
                 </button>
+
             </div>
+
         </section>
 
+
+        <!-- 投稿情報 -->
+
         <section id="resultPanel" class="panel hidden">
+
             <h2>投稿情報</h2>
 
-            <div class="result-item">
-                <span class="result-label">投稿タイプ</span>
-                <span id="postType" class="result-value">-</span>
+            <div>
+                <strong>投稿タイプ：</strong>
+                <span id="postType"></span>
             </div>
 
-            <div class="result-item">
-                <span class="result-label">投稿URL</span>
+            <div class="url-display">
+                <strong>URL：</strong>
                 <a
                     id="instagramLink"
-                    class="result-value url-link"
                     href="#"
                     target="_blank"
                     rel="noopener noreferrer"
-                >-</a>
+                ></a>
             </div>
 
+
+            <!-- Firefox起動 -->
+
             <div id="firefoxAction" class="firefox-action hidden">
-                <button id="firefoxButton" class="firefox-button">
+
+                <button
+                    id="firefoxButton"
+                    class="firefox-button"
+                    type="button"
+                >
                     Open in Firefox
                 </button>
 
                 <p class="small-note">
-                    Firefoxで投稿を開き、Tampermonkeyからダウンロードできます。
+                    FirefoxでInstagramの投稿を開きます。
                 </p>
+
             </div>
+
         </section>
 
+
+        <!-- アクセス検証結果 -->
+
         <section id="testPanel" class="panel hidden">
+
             <h2>アクセス検証結果</h2>
 
             <div class="test-result">
+
                 <h3>Test A：Cookieなし</h3>
-                <div id="resultA" class="test-output">
+
+                <div id="resultA">
                     未実行
                 </div>
+
             </div>
+
 
             <div class="test-result">
-                <h3>Test B：Cookie送信を許可</h3>
-                <div id="resultB" class="test-output">
+
+                <h3>Test B：Cookie送信許可</h3>
+
+                <div id="resultB">
                     未実行
                 </div>
+
             </div>
+
         </section>
+
+
+        <!-- 検証サマリー -->
 
         <section id="summaryPanel" class="panel hidden">
+
             <h2>検証サマリー</h2>
-            <div id="summary" class="summary-text"></div>
+
+            <div id="summary"></div>
+
         </section>
 
-        <section class="panel">
-            <h2>検証について</h2>
 
-            <ul class="description-list">
-                <li>Test AはCookieを送信しません。</li>
-                <li>Test BはブラウザーにCookieの送信を許可します。</li>
-                <li>Cookieの値やログイン情報は読み取りません。</li>
-                <li>Instagramから取得したHTML本文は画面に表示しません。</li>
-                <li>CORSエラーと通信エラーを完全に区別できない場合があります。</li>
-            </ul>
-        </section>
+        <!-- Service Worker状態 -->
 
         <footer>
-            <span>Instagram Media Saver</span>
-            <span id="swStatus">Checking...</span>
+
+            <p id="swStatus">
+                Service Worker status: checking...
+            </p>
+
         </footer>
 
     </main>
 
+
     <script src="./app.js"></script>
+
 </body>
 </html>
