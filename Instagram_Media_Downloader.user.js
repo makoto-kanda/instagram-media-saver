@@ -1,8 +1,11 @@
 // ==UserScript==
-// @name         Instagram Media Saver
+// @name         Instagram Media Downloader
 // @namespace    https://makoto-kanda.github.io/
-// @version      0.9.7
-// @description  Extract and save Instagram media
+// @version      1.0.0
+// @description  Download Instagram photos and videos
+// @homepageURL  https://makoto-kanda.github.io/instagram-media-saver/
+// @updateURL    https://raw.githubusercontent.com/makoto-kanda/instagram-media-saver/main/Instagram_Media_Downloader.user.js
+// @downloadURL  https://raw.githubusercontent.com/makoto-kanda/instagram-media-saver/main/Instagram_Media_Downloader.user.js
 // @match        https://www.instagram.com/*
 // @grant        GM_download
 // @grant        GM_addStyle
@@ -16,7 +19,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '0.9.7';
+    const VERSION = '1.0.0';
     const MARKER =
         'xdt_api__v1__media__shortcode__web_info';
 
@@ -33,6 +36,10 @@
 
     let currentShortcode = null;
     let currentMedia = [];
+    let currentPostMediaCount = 0;
+
+    // Status timer
+    let statusTimer = null;
 
     // --------------------------------------------------
     // CSS
@@ -336,11 +343,19 @@
             .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
             .replace(/\s+/g, ' ')
             .trim()
-            .slice(0, 100);
+            .replace(/[. ]+$/g, '')
+            .slice(0, 100)
+            .trim();
     }
 
     function setStatus(message, type = '') {
         if (!statusBox) return;
+
+        // Cancel any pending automatic status reset.
+        if (statusTimer) {
+            clearTimeout(statusTimer);
+            statusTimer = null;
+        }
 
         statusBox.textContent = message;
         statusBox.className = '';
@@ -350,6 +365,41 @@
         } else if (type === 'success') {
             statusBox.classList.add('imd-success');
         }
+    }
+
+    function getReadyStatus() {
+        return (
+            `${currentMedia.length} media item(s) found.\n` +
+            `Download Mode: ${DOWNLOAD_MODE}`
+        );
+    }
+
+    function setTemporaryStatus(
+        message,
+        type = '',
+        duration = 3000,
+        shortcode = currentShortcode
+    ) {
+        setStatus(message, type);
+
+        statusTimer = setTimeout(() => {
+            statusTimer = null;
+
+            // Do not overwrite the status of another post.
+            if (currentShortcode !== shortcode) {
+                return;
+            }
+
+            // Do not overwrite a newer status message.
+            if (
+                !statusBox ||
+                statusBox.textContent !== message
+            ) {
+                return;
+            }
+
+            setStatus(getReadyStatus());
+        }, duration);
     }
 
     function formatError(error) {
@@ -620,6 +670,10 @@
                 ? carousel
                 : [post];
 
+        // Preserve the original number of media items,
+        // including items that could not be extracted.
+        currentPostMediaCount = sourceItems.length;
+
         const caption = getCaption(post);
 
         return sourceItems.map((item, index) => {
@@ -633,6 +687,9 @@
             }
 
             return {
+                // Keep the original carousel position.
+                // This remains correct even if an unsupported
+                // item is skipped.
                 index: index + 1,
                 url,
                 thumbnailUrl: imageUrl || null,
@@ -663,9 +720,17 @@
             item.shortcode ||
             'media';
 
+        // Add a sequence number only for carousel posts.
+        // Use the original number of items in the post,
+        // not the number of successfully extracted items.
+        const suffix =
+            currentPostMediaCount > 1
+                ? `_${item.index}`
+                : '';
+
         return (
             `instagram_${item.shortcode}_` +
-            `${base}.${extension}`
+            `${base}${suffix}.${extension}`
         );
     }
 
@@ -749,11 +814,17 @@
 
     function downloadMedia(item) {
         const filename = getFilename(item);
+        const shortcodeAtStart = currentShortcode;
 
-        setStatus(
-            `Step 1/2: Getting media...\\n` +
-            `File: ${filename}`
-        );
+        // Snapshot the total number of media items at click time.
+        // Do not use currentMedia.length in asynchronous callbacks.
+        const totalItemsAtStart = currentMedia.length;
+
+        const progress =
+            `Preparing download: ` +
+            `${item.index}/${totalItemsAtStart}`;
+
+        setStatus(progress);
 
         console.log(
             '[IMD] Download clicked:',
@@ -786,10 +857,14 @@
                 error
             );
 
-            setStatus(
-                `Download failed:\\n${message}`,
-                'error'
-            );
+            // Avoid showing an error from an old post
+            // over the status of a newly opened post.
+            if (currentShortcode === shortcodeAtStart) {
+                setStatus(
+                    `Download failed:\n${message}`,
+                    'error'
+                );
+            }
         }
 
         fetchWatchdog = setTimeout(() => {
@@ -839,13 +914,22 @@
                         blob.type
                     );
 
-                    setStatus(
-                        `Media received: ${Math.round(blob.size / 1024)} KB\\n` +
-                        `Step 2/2: Saving file...\\n` +
-                        `${filename}`
-                    );
+                    // Do not overwrite the status for a
+                    // different post if navigation occurred.
+                    if (currentShortcode === shortcodeAtStart) {
+                        setStatus(
+                            `Starting download: ` +
+                            `${item.index}/${totalItemsAtStart}`
+                        );
+                    }
 
-                    saveBlobWithAnchor(blob, filename);
+                    saveBlobWithAnchor(
+                        blob,
+                        filename,
+                        item.index,
+                        totalItemsAtStart,
+                        shortcodeAtStart
+                    );
                 },
 
                 onerror: error => {
@@ -877,7 +961,13 @@
     // Save Blob using Firefox's native anchor handling
     // --------------------------------------------------
 
-    function saveBlobWithAnchor(blob, filename) {
+    function saveBlobWithAnchor(
+        blob,
+        filename,
+        itemIndex,
+        totalItems,
+        shortcodeAtStart
+    ) {
         let objectUrl = null;
         let anchor = null;
 
@@ -898,12 +988,16 @@
 
             anchor.click();
 
-            setStatus(
-                `Download requested:\\n${filename}\\n` +
-                `If Firefox does not start the download, ` +
-                `check its download notification.`,
-                'success'
-            );
+            // The anchor click requests the browser download.
+            // Actual file completion cannot be detected here.
+            if (currentShortcode === shortcodeAtStart) {
+                setTemporaryStatus(
+                    `Download started: ${itemIndex}/${totalItems}`,
+                    'success',
+                    3000,
+                    shortcodeAtStart
+                );
+            }
 
             // Keep the Blob URL alive long enough for Firefox
             // to begin processing the download.
@@ -937,12 +1031,14 @@
                 error
             );
 
-            setStatus(
-                `Download failed:\\n` +
-                `Could not start browser download: ` +
-                `${formatError(error)}`,
-                'error'
-            );
+            if (currentShortcode === shortcodeAtStart) {
+                setStatus(
+                    `Download failed:\n` +
+                    `Could not start browser download: ` +
+                    `${formatError(error)}`,
+                    'error'
+                );
+            }
         }
     }
 
@@ -1270,6 +1366,12 @@
 
             currentShortcode = null;
             currentMedia = [];
+            currentPostMediaCount = 0;
+
+            if (statusTimer) {
+                clearTimeout(statusTimer);
+                statusTimer = null;
+            }
 
             return;
         }
@@ -1282,6 +1384,11 @@
             return;
         }
 
+        if (statusTimer) {
+            clearTimeout(statusTimer);
+            statusTimer = null;
+        }
+
         currentShortcode = shortcode;
 
         createPanel();
@@ -1289,7 +1396,7 @@
         panel.style.display = 'flex';
 
         infoBox.textContent =
-            `Post: ${shortcode}\\n` +
+            `Post: ${shortcode}\n` +
             `Download Mode: ${DOWNLOAD_MODE}`;
 
         setStatus(
@@ -1303,11 +1410,12 @@
 
         if (!post) {
             currentMedia = [];
+            currentPostMediaCount = 0;
 
             renderMedia([]);
 
             setStatus(
-                'Media not found.\\n' +
+                'Media not found.\n' +
                 'The expected items array was not found ' +
                 'or the post shortcode did not match.',
                 'error'
@@ -1339,10 +1447,7 @@
             return;
         }
 
-        setStatus(
-            `${currentMedia.length} media item(s) found.\\n` +
-            `Download Mode: ${DOWNLOAD_MODE}`
-        );
+        setStatus(getReadyStatus());
 
         console.log(
             '[IMD] Extracted media:',
@@ -1382,6 +1487,12 @@
         'popstate',
         () => {
             currentShortcode = null;
+
+            if (statusTimer) {
+                clearTimeout(statusTimer);
+                statusTimer = null;
+            }
+
             setTimeout(updatePage, 700);
         }
     );
