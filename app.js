@@ -8,6 +8,9 @@ const resultPanel = document.getElementById("resultPanel");
 const postType = document.getElementById("postType");
 const instagramLink = document.getElementById("instagramLink");
 
+const firefoxAction = document.getElementById("firefoxAction");
+const firefoxButton = document.getElementById("firefoxButton");
+
 const testPanel = document.getElementById("testPanel");
 const resultA = document.getElementById("resultA");
 const resultB = document.getElementById("resultB");
@@ -136,7 +139,65 @@ function displayPostInfo(url) {
     instagramLink.href = url;
 
     resultPanel.classList.remove("hidden");
+    firefoxAction.classList.remove("hidden");
 }
+
+
+
+
+
+
+
+
+// --------------------------------------------------
+// FirefoxでInstagram投稿を開く
+// --------------------------------------------------
+
+function openInFirefox(url) {
+    const validUrl = validateInstagramUrl(url);
+
+    if (!validUrl) {
+        alert("有効なInstagram投稿URLがありません。");
+        return;
+    }
+
+    // Android以外では通常のリンクとして開く
+    if (!/Android/i.test(navigator.userAgent)) {
+        window.open(validUrl, "_blank", "noopener");
+        return;
+    }
+
+    const parsed = new URL(validUrl);
+
+    const intentUrl =
+        `intent://${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}` +
+        `#Intent;` +
+        `scheme=https;` +
+        `package=org.mozilla.firefox;` +
+        `S.browser_fallback_url=${encodeURIComponent(validUrl)};` +
+        `end`;
+
+    window.location.href = intentUrl;
+}
+
+firefoxButton.addEventListener("click", () => {
+    const url = validateInstagramUrl(urlInput.value);
+
+    if (!url) {
+        alert("有効なInstagram投稿URLがありません。");
+        return;
+    }
+
+    openInFirefox(url);
+});
+
+
+
+
+
+
+
+
 
 
 // --------------------------------------------------
@@ -500,6 +561,13 @@ clearButton.addEventListener("click", () => {
     urlInput.value = "";
 
     resultPanel.classList.add("hidden");
+
+
+
+    firefoxAction.classList.add("hidden");
+
+
+
     testPanel.classList.add("hidden");
     summaryPanel.classList.add("hidden");
 

@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
 
     <meta name="theme-color" content="#171717">
-    <meta name="description" content="Instagram access test">
+    <meta name="description" content="Instagram Media Saver">
 
-    <title>Instagram Access Test</title>
+    <title>Instagram Media Saver</title>
 
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="stylesheet" href="./style.css">
@@ -19,7 +19,7 @@
         <header class="header">
             <div class="app-icon">IS</div>
             <div>
-                <h1>Instagram Access Test</h1>
+                <h1>Instagram Media Saver</h1>
                 <p class="subtitle">Media Saver development test</p>
             </div>
         </header>
@@ -68,6 +68,16 @@
                     rel="noopener noreferrer"
                 >-</a>
             </div>
+
+            <div id="firefoxAction" class="firefox-action hidden">
+                <button id="firefoxButton" class="firefox-button">
+                    Open in Firefox
+                </button>
+
+                <p class="small-note">
+                    Firefoxで投稿を開き、Tampermonkeyからダウンロードできます。
+                </p>
+            </div>
         </section>
 
         <section id="testPanel" class="panel hidden">
@@ -97,21 +107,11 @@
             <h2>検証について</h2>
 
             <ul class="description-list">
-                <li>
-                    Test AはCookieを送信しません。
-                </li>
-                <li>
-                    Test BはブラウザーにCookieの送信を許可します。
-                </li>
-                <li>
-                    Cookieの値やログイン情報は読み取りません。
-                </li>
-                <li>
-                    Instagramから取得したHTML本文は画面に表示しません。
-                </li>
-                <li>
-                    CORSエラーと通信エラーを完全に区別できない場合があります。
-                </li>
+                <li>Test AはCookieを送信しません。</li>
+                <li>Test BはブラウザーにCookieの送信を許可します。</li>
+                <li>Cookieの値やログイン情報は読み取りません。</li>
+                <li>Instagramから取得したHTML本文は画面に表示しません。</li>
+                <li>CORSエラーと通信エラーを完全に区別できない場合があります。</li>
             </ul>
         </section>
 

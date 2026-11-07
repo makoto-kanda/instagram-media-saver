@@ -244,3 +244,30 @@ footer {
         width: 100%;
     }
 }
+
+/* --------------------------------------------------
+   Firefox launch button
+   -------------------------------------------------- */
+
+.firefox-action {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid #444;
+}
+
+.firefox-button {
+    display: block;
+    width: 100%;
+    min-height: 50px;
+    background: #e66b27;
+    color: white;
+    font-size: 16px;
+}
+
+.firefox-button:hover {
+    background: #f17b36;
+}
+
+.firefox-action .small-note {
+    text-align: center;
+}
