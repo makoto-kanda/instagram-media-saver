@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Instagram Media Downloader
 // @namespace    https://makoto-kanda.github.io/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Download Instagram photos and videos
 // @icon         https://raw.githubusercontent.com/makoto-kanda/instagram-media-saver/main/icons/icon32.png
 // @icon64       https://raw.githubusercontent.com/makoto-kanda/instagram-media-saver/main/icons/icon64.png
