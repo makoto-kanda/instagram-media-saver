@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Instagram Media Downloader
 // @namespace    https://github.com/makoto-kanda
-// @version      0.9.0
+// @version      0.9.3
 // @description  Download videos and images from the currently viewed Instagram post
 // @match        https://www.instagram.com/*
 // @grant        GM_download
@@ -12,7 +12,7 @@
 (() => {
     'use strict';
 
-    const VERSION = '0.9.0';
+    const VERSION = '0.9.3';
     const MARKER = 'xdt_api__v1__media__shortcode__web_info';
     const MAX_SCAN = 20 * 1024 * 1024;
 
@@ -27,6 +27,7 @@
         const match = location.pathname.match(
             /^\/(?:p|reel|reels|tv)\/([^/?#]+)/
         );
+
         return match ? match[1] : null;
     }
 
@@ -45,6 +46,7 @@
         if (open < 0) return null;
 
         const closingChar = openingChar === '{' ? '}' : ']';
+
         let depth = 0;
         let inString = false;
         let escaped = false;
@@ -60,6 +62,7 @@
                 } else if (ch === '"') {
                     inString = false;
                 }
+
                 continue;
             }
 
@@ -69,6 +72,7 @@
                 depth++;
             } else if (ch === closingChar) {
                 depth--;
+
                 if (depth === 0) {
                     return text.slice(open, i + 1);
                 }
@@ -79,11 +83,20 @@
     }
 
     function findPropertyValue(text, property, from = 0) {
-        const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp('"' + escaped + '"\\s*:', 'g');
+        const escaped = property.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            '\\$&'
+        );
+
+        const regex = new RegExp(
+            '"' + escaped + '"\\s*:',
+            'g'
+        );
+
         regex.lastIndex = from;
 
         const match = regex.exec(text);
+
         if (!match) return null;
 
         return balancedValue(text, regex.lastIndex);
@@ -91,6 +104,7 @@
 
     function parseJSON(value) {
         if (!value) return null;
+
         try {
             return JSON.parse(value);
         } catch {
@@ -125,7 +139,11 @@
             let position = 0;
 
             while (true) {
-                const markerIndex = source.indexOf(MARKER, position);
+                const markerIndex = source.indexOf(
+                    MARKER,
+                    position
+                );
+
                 if (markerIndex < 0) break;
 
                 position = markerIndex + MARKER.length;
@@ -139,6 +157,7 @@
                 if (!itemsText) continue;
 
                 const items = parseJSON(itemsText);
+
                 if (!Array.isArray(items)) continue;
 
                 const post = items.find(item =>
@@ -163,6 +182,7 @@
     function isInstagramCDN(url) {
         try {
             const host = new URL(url).hostname;
+
             return (
                 host.endsWith('.cdninstagram.com') ||
                 host.endsWith('.fbcdn.net')
@@ -176,7 +196,10 @@
         try {
             const pathname = new URL(url).pathname;
             const match = pathname.match(/\.([a-z0-9]+)$/i);
-            if (match) return match[1].toLowerCase();
+
+            if (match) {
+                return match[1].toLowerCase();
+            }
         } catch {}
 
         return type === 'video' ? 'mp4' : 'jpg';
@@ -194,6 +217,7 @@
             .sort((a, b) => {
                 const sizeA = (a.width || 0) * (a.height || 0);
                 const sizeB = (b.width || 0) * (b.height || 0);
+
                 return sizeB - sizeA;
             });
 
@@ -212,6 +236,7 @@
             .sort((a, b) => {
                 const sizeA = (a.width || 0) * (a.height || 0);
                 const sizeB = (b.width || 0) * (b.height || 0);
+
                 return sizeB - sizeA;
             });
 
@@ -247,11 +272,12 @@
             );
 
             if (isVideo) {
-                const bestVideo = getBestVideo(item.video_versions);
+                const bestVideo = getBestVideo(
+                    item.video_versions
+                );
+
                 if (!bestVideo) return;
 
-                // A video item normally has its own image_versions2
-                // containing the thumbnail candidates.
                 const thumbnail = getBestImage(
                     item.image_versions2?.candidates
                 );
@@ -260,11 +286,16 @@
                     type: 'video',
                     id: mediaId(item),
                     url: bestVideo.url,
-                    thumbnail: thumbnail?.url || item.display_uri || null,
+                    thumbnail: thumbnail?.url ||
+                        item.display_uri ||
+                        null,
                     width: bestVideo.width || 0,
                     height: bestVideo.height || 0,
                     index: index + 1,
-                    ext: getExtension(bestVideo.url, 'video')
+                    ext: getExtension(
+                        bestVideo.url,
+                        'video'
+                    )
                 });
 
                 return;
@@ -284,7 +315,10 @@
                 width: bestImage.width || 0,
                 height: bestImage.height || 0,
                 index: index + 1,
-                ext: getExtension(bestImage.url, 'image')
+                ext: getExtension(
+                    bestImage.url,
+                    'image'
+                )
             });
         });
 
@@ -325,12 +359,24 @@
                 color: white;
                 border: 1px solid #666;
                 border-radius: 4px;
-                padding: 4px 8px;
+                padding: 6px 10px;
                 margin-left: 4px;
+                touch-action: manipulation;
+                -webkit-tap-highlight-color: transparent;
             }
 
-            #ig-media-downloader button:hover {
-                background: #555;
+            @media (hover: hover) and (pointer: fine) {
+                #ig-media-downloader button:hover {
+                    background: #555;
+                }
+
+                #ig-media-downloader .imd-row:hover {
+                    background: #292929;
+                }
+            }
+
+            #ig-media-downloader button:active {
+                background: #666;
             }
 
             #ig-media-downloader .imd-header {
@@ -342,8 +388,8 @@
             }
 
             #ig-media-downloader .imd-row {
-                position: relative;
                 display: flex;
+                flex-wrap: wrap;
                 align-items: center;
                 gap: 8px;
                 padding: 8px 4px;
@@ -351,13 +397,9 @@
                 border-radius: 4px;
             }
 
-            #ig-media-downloader .imd-row:hover {
-                background: #292929;
-            }
-
             #ig-media-downloader .imd-info {
                 flex: 1;
-                min-width: 0;
+                min-width: 120px;
             }
 
             #ig-media-downloader .imd-title {
@@ -372,21 +414,27 @@
             }
 
             #ig-media-downloader .imd-actions {
-                white-space: nowrap;
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 4px;
+                flex: 0 0 auto;
+            }
+
+            #ig-media-downloader .imd-actions button {
+                margin-left: 0;
             }
 
             #ig-media-downloader .imd-preview {
                 display: none;
-                position: fixed;
-                z-index: 1000001;
-                width: 220px;
-                max-height: 300px;
+                flex: 0 0 100%;
+                width: 100%;
+                max-height: 320px;
                 object-fit: contain;
                 background: #111;
-                border: 1px solid #777;
+                border: 1px solid #555;
                 border-radius: 6px;
-                box-shadow: 0 5px 25px #000c;
-                pointer-events: none;
+                margin-top: 8px;
             }
 
             #ig-media-downloader .imd-row.imd-previewing
@@ -402,6 +450,24 @@
             #ig-media-downloader #imd-empty {
                 color: #aaa;
                 padding: 12px 4px;
+            }
+
+            @media (max-width: 600px) {
+                #ig-media-downloader {
+                    top: 10px;
+                    right: 10px;
+                    width: calc(100vw - 44px);
+                    max-height: 75vh;
+                }
+
+                #ig-media-downloader button {
+                    padding: 8px 10px;
+                    min-height: 36px;
+                }
+
+                #ig-media-downloader .imd-preview {
+                    max-height: 45vh;
+                }
             }
         `;
 
@@ -422,8 +488,8 @@
             <div class="imd-header">
                 <strong>Instagram Media Downloader v${VERSION}</strong>
                 <div>
-                    <button id="imd-rescan">Rescan</button>
-                    <button id="imd-close">Close</button>
+                    <button id="imd-rescan" type="button">Rescan</button>
+                    <button id="imd-close" type="button">Close</button>
                 </div>
             </div>
             <div id="imd-status">Scanning...</div>
@@ -432,42 +498,15 @@
 
         document.body.appendChild(panel);
 
-        panel.querySelector('#imd-close').onclick = () => panel.remove();
-        panel.querySelector('#imd-rescan').onclick = scan;
-    }
+        panel.querySelector('#imd-close').addEventListener(
+            'click',
+            () => panel.remove()
+        );
 
-    // ------------------------------------------------------------
-    // Preview positioning
-    // ------------------------------------------------------------
-
-    function showPreview(row, preview) {
-        if (!preview.src) return;
-
-        const rect = row.getBoundingClientRect();
-        const previewWidth = 220;
-        const previewHeight = 300;
-
-        let left = rect.left - previewWidth - 12;
-
-        // If there is insufficient room on the left, show it on the right.
-        if (left < 8) {
-            left = rect.right + 12;
-        }
-
-        // Keep the preview inside the viewport.
-        if (left + previewWidth > window.innerWidth - 8) {
-            left = Math.max(8, window.innerWidth - previewWidth - 8);
-        }
-
-        let top = rect.top;
-        if (top + previewHeight > window.innerHeight - 8) {
-            top = window.innerHeight - previewHeight - 8;
-        }
-
-        top = Math.max(8, top);
-
-        preview.style.left = `${left}px`;
-        preview.style.top = `${top}px`;
+        panel.querySelector('#imd-rescan').addEventListener(
+            'click',
+            scan
+        );
     }
 
     // ------------------------------------------------------------
@@ -482,17 +521,60 @@
         const filename =
             `instagram_${shortcode}_${item.type}_${item.index}.${item.ext}`;
 
-        GM_download({
-            url: item.url,
-            name: filename,
-            saveAs: false,
-            onerror: error => {
-                console.error(
-                    '[Instagram Downloader] Download error:',
-                    error
-                );
-            }
-        });
+        console.log('[IMD] Starting download:', filename);
+
+        try {
+            GM_download({
+                url: item.url,
+                name: filename,
+                saveAs: false,
+
+                onload: () => {
+                    console.log(
+                        '[IMD] Download completed:',
+                        filename
+                    );
+                },
+
+                onerror: error => {
+                    console.error(
+                        '[IMD] Download failed:',
+                        error
+                    );
+                },
+
+                ontimeout: () => {
+                    console.error(
+                        '[IMD] Download timeout:',
+                        filename
+                    );
+                }
+            });
+        } catch (error) {
+            console.error(
+                '[IMD] GM_download exception:',
+                error
+            );
+        }
+    }
+
+    // ------------------------------------------------------------
+    // Preview
+    // ------------------------------------------------------------
+
+    function togglePreview(row, preview, button) {
+        const isVisible = row.classList.contains(
+            'imd-previewing'
+        );
+
+        if (isVisible) {
+            row.classList.remove('imd-previewing');
+            button.textContent = 'Preview';
+            return;
+        }
+
+        row.classList.add('imd-previewing');
+        button.textContent = 'Hide Preview';
     }
 
     // ------------------------------------------------------------
@@ -512,9 +594,12 @@
         }
 
         const heading = document.createElement('div');
+
         heading.style.cssText =
             'font-weight:bold; margin:12px 0 6px; border-bottom:1px solid #555; padding-bottom:6px;';
+
         heading.textContent = `MEDIA (${media.length})`;
+
         content.appendChild(heading);
 
         media.forEach(item => {
@@ -535,6 +620,7 @@
 
             const meta = document.createElement('div');
             meta.className = 'imd-meta';
+
             meta.textContent =
                 `${item.width} × ${item.height} | URL length: ${item.url.length}`;
 
@@ -543,20 +629,33 @@
             const actions = document.createElement('div');
             actions.className = 'imd-actions';
 
-            const open = document.createElement('button');
-            open.textContent = 'Open';
-            open.onclick = () => openURL(item.url);
+            // Preview button
+            const previewButton = document.createElement('button');
+            previewButton.type = 'button';
+            previewButton.textContent = 'Preview';
 
-            const download = document.createElement('button');
-            download.textContent = 'Download';
-            download.onclick = () => downloadURL(item, shortcode);
+            // Open button
+            const openButton = document.createElement('button');
+            openButton.type = 'button';
+            openButton.textContent = 'Open';
 
-            actions.append(open, download);
+            // Download button
+            const downloadButton = document.createElement('button');
+            downloadButton.type = 'button';
+            downloadButton.textContent = 'Download';
+
+            actions.append(
+                previewButton,
+                openButton,
+                downloadButton
+            );
 
             row.append(info, actions);
 
+            // Inline preview image
             if (item.thumbnail) {
                 const preview = document.createElement('img');
+
                 preview.className = 'imd-preview';
                 preview.alt = `${label} ${item.index} preview`;
                 preview.loading = 'lazy';
@@ -564,21 +663,36 @@
 
                 row.appendChild(preview);
 
-                row.addEventListener('mouseenter', () => {
-                    row.classList.add('imd-previewing');
-                    showPreview(row, preview);
-                });
+                previewButton.addEventListener('click', event => {
+                    event.preventDefault();
+                    event.stopPropagation();
 
-                row.addEventListener('mousemove', () => {
-                    if (row.classList.contains('imd-previewing')) {
-                        showPreview(row, preview);
-                    }
+                    togglePreview(
+                        row,
+                        preview,
+                        previewButton
+                    );
                 });
-
-                row.addEventListener('mouseleave', () => {
-                    row.classList.remove('imd-previewing');
-                });
+            } else {
+                previewButton.disabled = true;
+                previewButton.title = 'No preview available';
             }
+
+            // Open action
+            openButton.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                openURL(item.url);
+            });
+
+            // Download action
+            downloadButton.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                downloadURL(item, shortcode);
+            });
 
             content.appendChild(row);
         });
@@ -598,6 +712,7 @@
 
         status.textContent = 'Scanning current post...';
         content.innerHTML = '';
+
         media = [];
 
         const shortcode = currentShortcode();
@@ -631,9 +746,20 @@
 
         renderMedia(shortcode);
 
-        console.log('[Instagram Downloader] Current shortcode:', shortcode);
-        console.log('[Instagram Downloader] Post data:', post);
-        console.log('[Instagram Downloader] Media in post order:', media);
+        console.log(
+            '[Instagram Downloader] Current shortcode:',
+            shortcode
+        );
+
+        console.log(
+            '[Instagram Downloader] Post data:',
+            post
+        );
+
+        console.log(
+            '[Instagram Downloader] Media in post order:',
+            media
+        );
     }
 
     // ------------------------------------------------------------
