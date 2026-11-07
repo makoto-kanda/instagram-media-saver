@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "instagram-media-saver-v2";
+const CACHE_NAME = "instagram-media-saver-v3";
 
 const APP_FILES = [
     "./",
@@ -10,8 +10,7 @@ const APP_FILES = [
     "./manifest.webmanifest"
 ];
 
-
-// インストール時に基本ファイルをキャッシュ
+// インストール
 self.addEventListener("install", event => {
     event.waitUntil(
         caches.open(CACHE_NAME)
@@ -20,22 +19,20 @@ self.addEventListener("install", event => {
     );
 });
 
-
 // 古いキャッシュを削除
 self.addEventListener("activate", event => {
     event.waitUntil(
-        caches.keys().then(keys => {
-            return Promise.all(
+        caches.keys()
+            .then(keys => Promise.all(
                 keys
                     .filter(key => key !== CACHE_NAME)
                     .map(key => caches.delete(key))
-            );
-        }).then(() => self.clients.claim())
+            ))
+            .then(() => self.clients.claim())
     );
 });
 
-
-// 同一オリジンのアプリファイルだけを処理
+// ネットワーク優先、失敗時のみキャッシュ
 self.addEventListener("fetch", event => {
     const request = event.request;
 
@@ -49,23 +46,30 @@ self.addEventListener("fetch", event => {
         return;
     }
 
-    if (request.mode === "navigate") {
-        event.respondWith(
-            fetch(request).catch(async () => {
-                return await caches.match("./index.html");
-            })
-        );
-
-        return;
-    }
-
     event.respondWith(
-        caches.match(request).then(cached => {
-            if (cached) {
-                return cached;
-            }
+        fetch(request)
+            .then(response => {
+                if (response.ok && response.type === "basic") {
+                    const copy = response.clone();
 
-            return fetch(request);
-        })
+                    caches.open(CACHE_NAME)
+                        .then(cache => cache.put(request, copy));
+                }
+
+                return response;
+            })
+            .catch(async () => {
+                const cached = await caches.match(request);
+
+                if (cached) {
+                    return cached;
+                }
+
+                if (request.mode === "navigate") {
+                    return await caches.match("./index.html");
+                }
+
+                return Response.error();
+            })
     );
 });
