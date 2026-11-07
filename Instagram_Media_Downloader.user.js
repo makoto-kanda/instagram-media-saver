@@ -1,58 +1,427 @@
 // ==UserScript==
-// @name         Instagram Media Downloader
-// @namespace    https://github.com/makoto-kanda
-// @version      0.9.3
-// @description  Download videos and images from the currently viewed Instagram post
+// @name         Instagram Media Saver
+// @namespace    https://makoto-kanda.github.io/
+// @version      0.9.7
+// @description  Extract and save Instagram media
 // @match        https://www.instagram.com/*
 // @grant        GM_download
 // @grant        GM_addStyle
+// @grant        GM_info
+// @grant        GM_xmlhttpRequest
+// @connect      cdninstagram.com
+// @connect      fbcdn.net
 // @run-at       document-idle
 // ==/UserScript==
 
 (() => {
     'use strict';
 
-    const VERSION = '0.9.3';
-    const MARKER = 'xdt_api__v1__media__shortcode__web_info';
-    const MAX_SCAN = 20 * 1024 * 1024;
+    const VERSION = '0.9.7';
+    const MARKER =
+        'xdt_api__v1__media__shortcode__web_info';
 
-    let panel;
-    let media = [];
+    const DOWNLOAD_MODE =
+        GM_info?.downloadMode || 'unknown';
 
-    // ------------------------------------------------------------
-    // Utilities
-    // ------------------------------------------------------------
+    let panel = null;
+    let mediaList = null;
+    let statusBox = null;
+    let infoBox = null;
 
-    function currentShortcode() {
+    let previewModal = null;
+    let previewContent = null;
+
+    let currentShortcode = null;
+    let currentMedia = [];
+
+    // --------------------------------------------------
+    // CSS
+    // --------------------------------------------------
+
+    GM_addStyle(`
+        #imd-panel {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            width: min(450px, calc(100vw - 24px));
+            max-height: 85vh;
+            z-index: 2147483647;
+            background: #171717;
+            color: #eee;
+            border: 1px solid #555;
+            border-radius: 10px;
+            box-shadow: 0 4px 20px #0009;
+            font: 13px/1.45 sans-serif;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #imd-header {
+            padding: 10px 12px;
+            background: #252525;
+            border-bottom: 1px solid #444;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        #imd-header strong {
+            font-size: 14px;
+        }
+
+        #imd-version {
+            color: #999;
+            font-size: 11px;
+        }
+
+        #imd-body {
+            padding: 10px;
+            overflow-y: auto;
+        }
+
+        #imd-info {
+            color: #aaa;
+            margin-bottom: 8px;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        #imd-status {
+            padding: 8px;
+            margin-bottom: 8px;
+            background: #242424;
+            border: 1px solid #444;
+            border-radius: 6px;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
+        }
+
+        #imd-status.imd-error {
+            color: #ff9b9b;
+            border-color: #a44;
+        }
+
+        #imd-status.imd-success {
+            color: #9fe3a5;
+            border-color: #487c4d;
+        }
+
+        #imd-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .imd-row {
+            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 7px;
+        }
+
+        .imd-row:hover {
+            border-color: #777;
+        }
+
+        .imd-thumb {
+            width: 64px;
+            height: 64px;
+            object-fit: cover;
+            background: #000;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+
+        .imd-label {
+            flex: 1;
+            min-width: 60px;
+            overflow-wrap: anywhere;
+            color: #ddd;
+        }
+
+        .imd-actions {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .imd-btn {
+            border: 1px solid #666;
+            background: #333;
+            color: #eee;
+            border-radius: 5px;
+            padding: 6px 10px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .imd-btn:hover {
+            background: #4a4a4a;
+        }
+
+        .imd-btn:active {
+            background: #555;
+        }
+
+        /* Desktop: Preview button is unnecessary */
+        .imd-preview-btn {
+            display: none;
+        }
+
+        /* Mobile: Preview button opens the modal */
+        @media (hover: none), (pointer: coarse) {
+            .imd-preview-btn {
+                display: inline-block;
+            }
+        }
+
+        .imd-preview-inline {
+            display: none;
+            width: 100%;
+            flex-basis: 100%;
+            background: #000;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .imd-row.imd-previewing .imd-preview-inline {
+            display: block;
+        }
+
+        .imd-preview-inline img,
+        .imd-preview-inline video {
+            display: block;
+            width: 100%;
+            max-height: 320px;
+            object-fit: contain;
+            background: #000;
+        }
+
+        #imd-footer {
+            padding: 8px 10px;
+            color: #888;
+            border-top: 1px solid #444;
+            font-size: 11px;
+        }
+
+        /* Preview modal */
+
+        #imd-modal {
+            position: fixed;
+            inset: 0;
+            z-index: 2147483647;
+            background: #000d;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 12px;
+        }
+
+        #imd-modal.imd-modal-open {
+            display: flex;
+        }
+
+        #imd-modal-box {
+            position: relative;
+            width: min(900px, 100%);
+            max-height: 90vh;
+            background: #171717;
+            border: 1px solid #555;
+            border-radius: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #imd-modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: #252525;
+            color: #eee;
+        }
+
+        #imd-modal-close {
+            font-size: 22px;
+            line-height: 1;
+            border: none;
+            background: transparent;
+            color: #fff;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        #imd-modal-content {
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+
+        #imd-modal-content img,
+        #imd-modal-content video {
+            display: block;
+            max-width: 100%;
+            max-height: 80vh;
+            object-fit: contain;
+        }
+
+        @media (max-width: 600px) {
+            #imd-panel {
+                top: 8px;
+                right: 8px;
+                width: calc(100vw - 16px);
+                max-height: 80vh;
+            }
+
+            .imd-thumb {
+                width: 52px;
+                height: 52px;
+            }
+
+            .imd-actions {
+                width: 100%;
+            }
+
+            .imd-btn {
+                flex: 1;
+                min-width: 60px;
+            }
+        }
+    `);
+
+    // --------------------------------------------------
+    // General utilities
+    // --------------------------------------------------
+
+    function getShortcode() {
         const match = location.pathname.match(
-            /^\/(?:p|reel|reels|tv)\/([^/?#]+)/
+            /\/(?:p|reel|reels|tv)\/([^/]+)/
         );
 
         return match ? match[1] : null;
     }
 
-    function balancedValue(text, start) {
-        let open = -1;
-        let openingChar = '';
+    function isValidMediaUrl(url) {
+        try {
+            const parsed = new URL(url);
 
-        for (let i = start; i < text.length; i++) {
-            if (text[i] === '{' || text[i] === '[') {
-                open = i;
-                openingChar = text[i];
-                break;
-            }
+            return (
+                parsed.protocol === 'https:' &&
+                (
+                    parsed.hostname.endsWith(
+                        '.cdninstagram.com'
+                    ) ||
+                    parsed.hostname.endsWith(
+                        '.fbcdn.net'
+                    )
+                )
+            );
+        } catch {
+            return false;
+        }
+    }
+
+    function sanitizeFilename(text) {
+        return String(text || '')
+            .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 100);
+    }
+
+    function setStatus(message, type = '') {
+        if (!statusBox) return;
+
+        statusBox.textContent = message;
+        statusBox.className = '';
+
+        if (type === 'error') {
+            statusBox.classList.add('imd-error');
+        } else if (type === 'success') {
+            statusBox.classList.add('imd-success');
+        }
+    }
+
+    function formatError(error) {
+        if (!error) return 'Unknown error';
+
+        if (typeof error === 'string') {
+            return error;
         }
 
-        if (open < 0) return null;
+        const parts = [];
 
-        const closingChar = openingChar === '{' ? '}' : ']';
+        if (error.error) parts.push(error.error);
+        if (error.message) parts.push(error.message);
+        if (error.details) parts.push(error.details);
+
+        return parts.join(': ') ||
+            JSON.stringify(error);
+    }
+
+    // --------------------------------------------------
+    // JSON extraction
+    //
+    // HTML -> MARKER -> items array -> matching post.
+    // --------------------------------------------------
+
+    function findPropertyPosition(
+        source,
+        property,
+        startIndex
+    ) {
+        const escaped = property.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            '\\$&'
+        );
+
+        const regex = new RegExp(
+            `["']${escaped}["']\\s*:`,
+            'g'
+        );
+
+        regex.lastIndex = Math.max(0, startIndex || 0);
+
+        const match = regex.exec(source);
+
+        return match ? regex.lastIndex : -1;
+    }
+
+    function extractBalancedJson(
+        source,
+        startIndex,
+        openChar,
+        closeChar
+    ) {
+        let start = startIndex;
+
+        while (
+            start < source.length &&
+            /\s/.test(source[start])
+        ) {
+            start++;
+        }
+
+        if (source[start] !== openChar) {
+            return null;
+        }
 
         let depth = 0;
         let inString = false;
         let escaped = false;
 
-        for (let i = open; i < text.length; i++) {
-            const ch = text[i];
+        for (let i = start; i < source.length; i++) {
+            const ch = source[i];
 
             if (inString) {
                 if (escaped) {
@@ -68,13 +437,16 @@
 
             if (ch === '"') {
                 inString = true;
-            } else if (ch === openingChar) {
+                continue;
+            }
+
+            if (ch === openChar) {
                 depth++;
-            } else if (ch === closingChar) {
+            } else if (ch === closeChar) {
                 depth--;
 
                 if (depth === 0) {
-                    return text.slice(open, i + 1);
+                    return source.slice(start, i + 1);
                 }
             }
         }
@@ -82,567 +454,745 @@
         return null;
     }
 
-    function findPropertyValue(text, property, from = 0) {
-        const escaped = property.replace(
-            /[.*+?^${}()|[\]\\]/g,
-            '\\$&'
+    function extractItemsArray(html, markerIndex) {
+        const itemsPosition = findPropertyPosition(
+            html,
+            'items',
+            markerIndex + MARKER.length
         );
 
-        const regex = new RegExp(
-            '"' + escaped + '"\\s*:',
-            'g'
+        if (itemsPosition < 0) {
+            return null;
+        }
+
+        const arrayText = extractBalancedJson(
+            html,
+            itemsPosition,
+            '[',
+            ']'
         );
 
-        regex.lastIndex = from;
-
-        const match = regex.exec(text);
-
-        if (!match) return null;
-
-        return balancedValue(text, regex.lastIndex);
-    }
-
-    function parseJSON(value) {
-        if (!value) return null;
+        if (!arrayText) {
+            return null;
+        }
 
         try {
-            return JSON.parse(value);
-        } catch {
+            return JSON.parse(arrayText);
+        } catch (error) {
+            console.warn(
+                '[IMD] items JSON parse failed:',
+                error
+            );
+
             return null;
         }
     }
 
-    function getPageSources() {
-        const sources = [];
+    function extractPostFromPage(shortcode) {
+        // Important: use the complete page HTML.
+        // Do not restrict the search to script elements.
+        const html = document.documentElement.innerHTML;
 
-        document.querySelectorAll('script').forEach(script => {
-            if (script.textContent && script.textContent.length) {
-                sources.push(script.textContent);
+        let searchPosition = 0;
+
+        while (true) {
+            const markerIndex = html.indexOf(
+                MARKER,
+                searchPosition
+            );
+
+            if (markerIndex < 0) {
+                break;
             }
-        });
 
-        sources.push(document.documentElement.innerHTML);
+            searchPosition =
+                markerIndex + MARKER.length;
 
-        return sources;
-    }
+            const items = extractItemsArray(
+                html,
+                markerIndex
+            );
 
-    // ------------------------------------------------------------
-    // Find the payload belonging to the current shortcode
-    // ------------------------------------------------------------
+            if (!Array.isArray(items)) {
+                continue;
+            }
 
-    function findPostData(shortcode) {
-        const sources = getPageSources();
+            const post = items.find(item =>
+                item &&
+                (
+                    item.code === shortcode ||
+                    item.shortcode === shortcode
+                )
+            );
 
-        for (const source of sources) {
-            if (source.length > MAX_SCAN) continue;
-
-            let position = 0;
-
-            while (true) {
-                const markerIndex = source.indexOf(
-                    MARKER,
-                    position
+            if (post) {
+                console.log(
+                    '[IMD] Matching post found:',
+                    shortcode
                 );
 
-                if (markerIndex < 0) break;
-
-                position = markerIndex + MARKER.length;
-
-                const itemsText = findPropertyValue(
-                    source,
-                    'items',
-                    markerIndex
-                );
-
-                if (!itemsText) continue;
-
-                const items = parseJSON(itemsText);
-
-                if (!Array.isArray(items)) continue;
-
-                const post = items.find(item =>
-                    item &&
-                    (
-                        item.code === shortcode ||
-                        item.shortcode === shortcode
-                    )
-                );
-
-                if (post) return post;
+                return post;
             }
         }
 
         return null;
     }
 
-    // ------------------------------------------------------------
-    // Media URL helpers
-    // ------------------------------------------------------------
+    // --------------------------------------------------
+    // Media extraction
+    // --------------------------------------------------
 
-    function isInstagramCDN(url) {
-        try {
-            const host = new URL(url).hostname;
+    function getBestVideoUrl(item) {
+        const versions = item?.video_versions;
 
-            return (
-                host.endsWith('.cdninstagram.com') ||
-                host.endsWith('.fbcdn.net')
+        if (!Array.isArray(versions) || !versions.length) {
+            return null;
+        }
+
+        const sorted = [...versions].sort((a, b) => {
+            const aSize =
+                (Number(a.width) || 0) *
+                (Number(a.height) || 0);
+
+            const bSize =
+                (Number(b.width) || 0) *
+                (Number(b.height) || 0);
+
+            return bSize - aSize;
+        });
+
+        return sorted.find(v =>
+            v.url && isValidMediaUrl(v.url)
+        )?.url || null;
+    }
+
+    function getBestImageUrl(item) {
+        const candidates =
+            item?.image_versions2?.candidates;
+
+        if (!Array.isArray(candidates) ||
+            !candidates.length) {
+            return null;
+        }
+
+        const sorted = [...candidates].sort((a, b) => {
+            const aSize =
+                (Number(a.width) || 0) *
+                (Number(a.height) || 0);
+
+            const bSize =
+                (Number(b.width) || 0) *
+                (Number(b.height) || 0);
+
+            return bSize - aSize;
+        });
+
+        return sorted.find(c =>
+            c.url && isValidMediaUrl(c.url)
+        )?.url || null;
+    }
+
+    function getCaption(post) {
+        const caption = post?.caption;
+
+        if (typeof caption === 'string') {
+            return caption;
+        }
+
+        if (caption?.text) {
+            return caption.text;
+        }
+
+        return '';
+    }
+
+    function collectMedia(post) {
+        if (!post) return [];
+
+        const carousel = Array.isArray(
+            post.carousel_media
+        )
+            ? post.carousel_media
+            : null;
+
+        const sourceItems =
+            carousel && carousel.length
+                ? carousel
+                : [post];
+
+        const caption = getCaption(post);
+
+        return sourceItems.map((item, index) => {
+            const videoUrl = getBestVideoUrl(item);
+            const imageUrl = getBestImageUrl(item);
+
+            const url = videoUrl || imageUrl;
+
+            if (!url || !isValidMediaUrl(url)) {
+                return null;
+            }
+
+            return {
+                index: index + 1,
+                url,
+                thumbnailUrl: imageUrl || null,
+                type: videoUrl ? 'video' : 'image',
+                shortcode:
+                    post.code ||
+                    post.shortcode ||
+                    currentShortcode,
+                caption
+            };
+        }).filter(Boolean);
+    }
+
+    // --------------------------------------------------
+    // Filename
+    // --------------------------------------------------
+
+    function getFilename(item) {
+        const extension =
+            item.type === 'video' ? 'mp4' : 'jpg';
+
+        const caption = sanitizeFilename(
+            item.caption
+        );
+
+        const base =
+            caption ||
+            item.shortcode ||
+            'media';
+
+        return (
+            `instagram_${item.shortcode}_` +
+            `${base}.${extension}`
+        );
+    }
+
+    // --------------------------------------------------
+    // Preview
+    // --------------------------------------------------
+
+    function makePreviewElement(item) {
+        let element;
+
+        if (item.type === 'video') {
+            element = document.createElement('video');
+            element.src = item.url;
+            element.controls = true;
+            element.playsInline = true;
+            element.preload = 'metadata';
+        } else {
+            element = document.createElement('img');
+            element.src = item.url;
+            element.alt = 'Instagram media preview';
+        }
+
+        return element;
+    }
+
+    function openPreview(item) {
+        if (!previewModal || !previewContent) {
+            return;
+        }
+
+        previewContent.replaceChildren(
+            makePreviewElement(item)
+        );
+
+        previewModal.classList.add(
+            'imd-modal-open'
+        );
+    }
+
+    function closePreview() {
+        if (!previewModal || !previewContent) {
+            return;
+        }
+
+        const video =
+            previewContent.querySelector('video');
+
+        if (video) video.pause();
+
+        previewModal.classList.remove(
+            'imd-modal-open'
+        );
+
+        previewContent.replaceChildren();
+    }
+
+    // --------------------------------------------------
+    // Open
+    // --------------------------------------------------
+
+    function openMedia(item) {
+        const tab = window.open(
+            item.url,
+            '_blank',
+            'noopener'
+        );
+
+        if (!tab) {
+            setStatus(
+                'Open failed: Firefox blocked the new tab.',
+                'error'
             );
-        } catch {
-            return false;
+        } else {
+            setStatus('Media opened in a new tab.');
         }
     }
 
-    function getExtension(url, type) {
-        try {
-            const pathname = new URL(url).pathname;
-            const match = pathname.match(/\.([a-z0-9]+)$/i);
+    // --------------------------------------------------
+    // Download
+    // --------------------------------------------------
 
-            if (match) {
-                return match[1].toLowerCase();
-            }
-        } catch {}
+    function downloadMedia(item) {
+        const filename = getFilename(item);
 
-        return type === 'video' ? 'mp4' : 'jpg';
-    }
-
-    function getBestImage(candidates) {
-        if (!Array.isArray(candidates)) return null;
-
-        const valid = candidates
-            .filter(item =>
-                item &&
-                typeof item.url === 'string' &&
-                isInstagramCDN(item.url)
-            )
-            .sort((a, b) => {
-                const sizeA = (a.width || 0) * (a.height || 0);
-                const sizeB = (b.width || 0) * (b.height || 0);
-
-                return sizeB - sizeA;
-            });
-
-        return valid[0] || null;
-    }
-
-    function getBestVideo(versions) {
-        if (!Array.isArray(versions)) return null;
-
-        const valid = versions
-            .filter(item =>
-                item &&
-                typeof item.url === 'string' &&
-                isInstagramCDN(item.url)
-            )
-            .sort((a, b) => {
-                const sizeA = (a.width || 0) * (a.height || 0);
-                const sizeB = (b.width || 0) * (b.height || 0);
-
-                return sizeB - sizeA;
-            });
-
-        return valid[0] || null;
-    }
-
-    function mediaId(item) {
-        return String(
-            item?.pk ??
-            item?.id ??
-            item?.fbid ??
-            ''
+        setStatus(
+            `Step 1/2: Getting media...\\n` +
+            `File: ${filename}`
         );
-    }
 
-    // ------------------------------------------------------------
-    // Collect media in original carousel order
-    // ------------------------------------------------------------
+        console.log(
+            '[IMD] Download clicked:',
+            item
+        );
 
-    function collectMedia(post) {
-        const mediaItems = Array.isArray(post.carousel_media)
-            ? post.carousel_media
-            : [post];
+        if (!isValidMediaUrl(item.url)) {
+            setStatus(
+                'Download failed: Invalid media URL.',
+                'error'
+            );
+            return;
+        }
 
-        const result = [];
+        let finished = false;
+        let fetchWatchdog = null;
 
-        mediaItems.forEach((item, index) => {
-            if (!item) return;
+        function fail(message, error = null) {
+            if (finished) return;
 
-            const isVideo = !!(
-                item.video_versions &&
-                item.video_versions.length
+            finished = true;
+
+            if (fetchWatchdog) {
+                clearTimeout(fetchWatchdog);
+            }
+
+            console.error(
+                '[IMD] Download failed:',
+                message,
+                error
             );
 
-            if (isVideo) {
-                const bestVideo = getBestVideo(
-                    item.video_versions
-                );
-
-                if (!bestVideo) return;
-
-                const thumbnail = getBestImage(
-                    item.image_versions2?.candidates
-                );
-
-                result.push({
-                    type: 'video',
-                    id: mediaId(item),
-                    url: bestVideo.url,
-                    thumbnail: thumbnail?.url ||
-                        item.display_uri ||
-                        null,
-                    width: bestVideo.width || 0,
-                    height: bestVideo.height || 0,
-                    index: index + 1,
-                    ext: getExtension(
-                        bestVideo.url,
-                        'video'
-                    )
-                });
-
-                return;
-            }
-
-            const bestImage = getBestImage(
-                item.image_versions2?.candidates
+            setStatus(
+                `Download failed:\\n${message}`,
+                'error'
             );
+        }
 
-            if (!bestImage) return;
-
-            result.push({
-                type: 'image',
-                id: mediaId(item),
-                url: bestImage.url,
-                thumbnail: bestImage.url,
-                width: bestImage.width || 0,
-                height: bestImage.height || 0,
-                index: index + 1,
-                ext: getExtension(
-                    bestImage.url,
-                    'image'
-                )
-            });
-        });
-
-        return result.sort((a, b) => a.index - b.index);
-    }
-
-    // ------------------------------------------------------------
-    // UI styles
-    // ------------------------------------------------------------
-
-    function addStyles() {
-        if (document.getElementById('imd-style')) return;
-
-        const style = document.createElement('style');
-        style.id = 'imd-style';
-
-        style.textContent = `
-            #ig-media-downloader {
-                position: fixed;
-                z-index: 999999;
-                top: 20px;
-                right: 20px;
-                width: 450px;
-                max-height: 85vh;
-                overflow: auto;
-                background: #181818;
-                color: #eee;
-                border: 1px solid #555;
-                border-radius: 9px;
-                padding: 12px;
-                font: 13px/1.4 Arial, sans-serif;
-                box-shadow: 0 4px 20px #0009;
-            }
-
-            #ig-media-downloader button {
-                cursor: pointer;
-                background: #333;
-                color: white;
-                border: 1px solid #666;
-                border-radius: 4px;
-                padding: 6px 10px;
-                margin-left: 4px;
-                touch-action: manipulation;
-                -webkit-tap-highlight-color: transparent;
-            }
-
-            @media (hover: hover) and (pointer: fine) {
-                #ig-media-downloader button:hover {
-                    background: #555;
-                }
-
-                #ig-media-downloader .imd-row:hover {
-                    background: #292929;
-                }
-            }
-
-            #ig-media-downloader button:active {
-                background: #666;
-            }
-
-            #ig-media-downloader .imd-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                gap: 8px;
-                margin-bottom: 10px;
-            }
-
-            #ig-media-downloader .imd-row {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 8px;
-                padding: 8px 4px;
-                border-bottom: 1px solid #333;
-                border-radius: 4px;
-            }
-
-            #ig-media-downloader .imd-info {
-                flex: 1;
-                min-width: 120px;
-            }
-
-            #ig-media-downloader .imd-title {
-                font-weight: bold;
-                margin-bottom: 3px;
-            }
-
-            #ig-media-downloader .imd-meta {
-                color: #aaa;
-                font-size: 11px;
-                overflow-wrap: anywhere;
-            }
-
-            #ig-media-downloader .imd-actions {
-                display: flex;
-                flex-wrap: wrap;
-                align-items: center;
-                gap: 4px;
-                flex: 0 0 auto;
-            }
-
-            #ig-media-downloader .imd-actions button {
-                margin-left: 0;
-            }
-
-            #ig-media-downloader .imd-preview {
-                display: none;
-                flex: 0 0 100%;
-                width: 100%;
-                max-height: 320px;
-                object-fit: contain;
-                background: #111;
-                border: 1px solid #555;
-                border-radius: 6px;
-                margin-top: 8px;
-            }
-
-            #ig-media-downloader .imd-row.imd-previewing
-            .imd-preview {
-                display: block;
-            }
-
-            #ig-media-downloader #imd-status {
-                color: #ccc;
-                padding: 5px 0;
-            }
-
-            #ig-media-downloader #imd-empty {
-                color: #aaa;
-                padding: 12px 4px;
-            }
-
-            @media (max-width: 600px) {
-                #ig-media-downloader {
-                    top: 10px;
-                    right: 10px;
-                    width: calc(100vw - 44px);
-                    max-height: 75vh;
-                }
-
-                #ig-media-downloader button {
-                    padding: 8px 10px;
-                    min-height: 36px;
-                }
-
-                #ig-media-downloader .imd-preview {
-                    max-height: 45vh;
-                }
-            }
-        `;
-
-        document.head.appendChild(style);
-    }
-
-    // ------------------------------------------------------------
-    // Panel
-    // ------------------------------------------------------------
-
-    function createPanel() {
-        if (panel) panel.remove();
-
-        panel = document.createElement('div');
-        panel.id = 'ig-media-downloader';
-
-        panel.innerHTML = `
-            <div class="imd-header">
-                <strong>Instagram Media Downloader v${VERSION}</strong>
-                <div>
-                    <button id="imd-rescan" type="button">Rescan</button>
-                    <button id="imd-close" type="button">Close</button>
-                </div>
-            </div>
-            <div id="imd-status">Scanning...</div>
-            <div id="imd-content"></div>
-        `;
-
-        document.body.appendChild(panel);
-
-        panel.querySelector('#imd-close').addEventListener(
-            'click',
-            () => panel.remove()
-        );
-
-        panel.querySelector('#imd-rescan').addEventListener(
-            'click',
-            scan
-        );
-    }
-
-    // ------------------------------------------------------------
-    // Open / Download
-    // ------------------------------------------------------------
-
-    function openURL(url) {
-        window.open(url, '_blank', 'noopener');
-    }
-
-    function downloadURL(item, shortcode) {
-        const filename =
-            `instagram_${shortcode}_${item.type}_${item.index}.${item.ext}`;
-
-        console.log('[IMD] Starting download:', filename);
+        fetchWatchdog = setTimeout(() => {
+            fail('Media request timed out after 95 seconds.');
+        }, 95000);
 
         try {
-            GM_download({
+            GM_xmlhttpRequest({
+                method: 'GET',
                 url: item.url,
-                name: filename,
-                saveAs: false,
+                responseType: 'blob',
+                timeout: 90000,
 
-                onload: () => {
+                onload: response => {
+                    if (finished) return;
+
+                    clearTimeout(fetchWatchdog);
+
+                    if (
+                        response.status < 200 ||
+                        response.status >= 300
+                    ) {
+                        fail(
+                            `Media request failed. HTTP ${response.status}`
+                        );
+                        return;
+                    }
+
+                    const blob = response.response;
+
+                    if (!(blob instanceof Blob)) {
+                        fail(
+                            'Media response is not a Blob.'
+                        );
+                        return;
+                    }
+
+                    if (!blob.size) {
+                        fail('Received an empty media file.');
+                        return;
+                    }
+
                     console.log(
-                        '[IMD] Download completed:',
-                        filename
+                        '[IMD] Media received:',
+                        blob.size,
+                        'bytes',
+                        blob.type
                     );
+
+                    setStatus(
+                        `Media received: ${Math.round(blob.size / 1024)} KB\\n` +
+                        `Step 2/2: Saving file...\\n` +
+                        `${filename}`
+                    );
+
+                    saveBlobWithAnchor(blob, filename);
                 },
 
                 onerror: error => {
-                    console.error(
-                        '[IMD] Download failed:',
+                    fail(
+                        'Media request error: ' +
+                        formatError(error),
                         error
                     );
                 },
 
                 ontimeout: () => {
-                    console.error(
-                        '[IMD] Download timeout:',
-                        filename
-                    );
+                    fail('Media request timed out.');
+                },
+
+                onabort: () => {
+                    fail('Media request was aborted.');
                 }
             });
         } catch (error) {
-            console.error(
-                '[IMD] GM_download exception:',
+            fail(
+                'GM_xmlhttpRequest exception: ' +
+                formatError(error),
                 error
             );
         }
     }
 
-    // ------------------------------------------------------------
-    // Preview
-    // ------------------------------------------------------------
+    // --------------------------------------------------
+    // Save Blob using Firefox's native anchor handling
+    // --------------------------------------------------
 
-    function togglePreview(row, preview, button) {
-        const isVisible = row.classList.contains(
-            'imd-previewing'
-        );
+    function saveBlobWithAnchor(blob, filename) {
+        let objectUrl = null;
+        let anchor = null;
 
-        if (isVisible) {
-            row.classList.remove('imd-previewing');
-            button.textContent = 'Preview';
-            return;
+        try {
+            objectUrl = URL.createObjectURL(blob);
+
+            anchor = document.createElement('a');
+            anchor.href = objectUrl;
+            anchor.download = filename;
+            anchor.style.display = 'none';
+
+            document.body.appendChild(anchor);
+
+            console.log(
+                '[IMD] Starting anchor download:',
+                filename
+            );
+
+            anchor.click();
+
+            setStatus(
+                `Download requested:\\n${filename}\\n` +
+                `If Firefox does not start the download, ` +
+                `check its download notification.`,
+                'success'
+            );
+
+            // Keep the Blob URL alive long enough for Firefox
+            // to begin processing the download.
+            setTimeout(() => {
+                if (anchor && anchor.parentNode) {
+                    anchor.parentNode.removeChild(anchor);
+                }
+
+                if (objectUrl) {
+                    URL.revokeObjectURL(objectUrl);
+                    objectUrl = null;
+                }
+
+                console.log(
+                    '[IMD] Blob URL released:',
+                    filename
+                );
+            }, 60000);
+
+        } catch (error) {
+            if (anchor && anchor.parentNode) {
+                anchor.parentNode.removeChild(anchor);
+            }
+
+            if (objectUrl) {
+                URL.revokeObjectURL(objectUrl);
+            }
+
+            console.error(
+                '[IMD] Anchor download exception:',
+                error
+            );
+
+            setStatus(
+                `Download failed:\\n` +
+                `Could not start browser download: ` +
+                `${formatError(error)}`,
+                'error'
+            );
         }
-
-        row.classList.add('imd-previewing');
-        button.textContent = 'Hide Preview';
     }
 
-    // ------------------------------------------------------------
-    // Render media list
-    // ------------------------------------------------------------
+    // --------------------------------------------------
+    // UI creation
+    // --------------------------------------------------
 
-    function renderMedia(shortcode) {
-        const content = panel.querySelector('#imd-content');
-        content.innerHTML = '';
+    function createPanel() {
+        if (panel) return;
 
-        if (!media.length) {
-            const empty = document.createElement('div');
-            empty.id = 'imd-empty';
-            empty.textContent = 'No media found in this post.';
-            content.appendChild(empty);
+        panel = document.createElement('div');
+        panel.id = 'imd-panel';
+
+        const header =
+            document.createElement('div');
+
+        header.id = 'imd-header';
+
+        const title =
+            document.createElement('div');
+
+        title.innerHTML =
+            `<strong>Instagram Media Saver</strong> ` +
+            `<span id="imd-version">v${VERSION}</span>`;
+
+        const closeButton =
+            document.createElement('button');
+
+        closeButton.className = 'imd-btn';
+        closeButton.textContent = 'Close';
+
+        closeButton.addEventListener('click', () => {
+            panel.style.display = 'none';
+        });
+
+        header.append(title, closeButton);
+
+        const body =
+            document.createElement('div');
+
+        body.id = 'imd-body';
+
+        infoBox =
+            document.createElement('div');
+
+        infoBox.id = 'imd-info';
+
+        statusBox =
+            document.createElement('div');
+
+        statusBox.id = 'imd-status';
+
+        statusBox.textContent =
+            `Download Mode: ${DOWNLOAD_MODE}`;
+
+        mediaList =
+            document.createElement('div');
+
+        mediaList.id = 'imd-list';
+
+        body.append(
+            infoBox,
+            statusBox,
+            mediaList
+        );
+
+        const footer =
+            document.createElement('div');
+
+        footer.id = 'imd-footer';
+
+        footer.textContent =
+            'Desktop: hover media row | Mobile: Preview button';
+
+        panel.append(
+            header,
+            body,
+            footer
+        );
+
+        document.body.appendChild(panel);
+
+        // Modal
+        previewModal =
+            document.createElement('div');
+
+        previewModal.id = 'imd-modal';
+
+        const modalBox =
+            document.createElement('div');
+
+        modalBox.id = 'imd-modal-box';
+
+        const modalHeader =
+            document.createElement('div');
+
+        modalHeader.id = 'imd-modal-header';
+
+        const modalTitle =
+            document.createElement('span');
+
+        modalTitle.textContent = 'Preview';
+
+        const modalClose =
+            document.createElement('button');
+
+        modalClose.id = 'imd-modal-close';
+        modalClose.type = 'button';
+        modalClose.textContent = '×';
+        modalClose.setAttribute(
+            'aria-label',
+            'Close preview'
+        );
+
+        modalClose.addEventListener(
+            'click',
+            closePreview
+        );
+
+        modalHeader.append(
+            modalTitle,
+            modalClose
+        );
+
+        previewContent =
+            document.createElement('div');
+
+        previewContent.id = 'imd-modal-content';
+
+        modalBox.append(
+            modalHeader,
+            previewContent
+        );
+
+        previewModal.appendChild(modalBox);
+
+        previewModal.addEventListener('click', event => {
+            if (event.target === previewModal) {
+                closePreview();
+            }
+        });
+
+        document.body.appendChild(previewModal);
+
+        document.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+                closePreview();
+            }
+        });
+    }
+
+    // --------------------------------------------------
+    // Render media
+    // --------------------------------------------------
+
+    function renderMedia(items) {
+        createPanel();
+
+        mediaList.replaceChildren();
+
+        if (!items.length) {
+            const empty =
+                document.createElement('div');
+
+            empty.textContent = 'No media found.';
+
+            mediaList.appendChild(empty);
+
             return;
         }
 
-        const heading = document.createElement('div');
+        items.forEach(item => {
+            const row =
+                document.createElement('div');
 
-        heading.style.cssText =
-            'font-weight:bold; margin:12px 0 6px; border-bottom:1px solid #555; padding-bottom:6px;';
-
-        heading.textContent = `MEDIA (${media.length})`;
-
-        content.appendChild(heading);
-
-        media.forEach(item => {
-            const row = document.createElement('div');
             row.className = 'imd-row';
 
-            const info = document.createElement('div');
-            info.className = 'imd-info';
+            const thumb =
+                document.createElement('img');
 
-            const title = document.createElement('div');
-            title.className = 'imd-title';
+            thumb.className = 'imd-thumb';
 
-            const emoji = item.type === 'video' ? '🎬' : '🖼️';
-            const label = item.type === 'video' ? 'VIDEO' : 'IMAGE';
+            // Use the image candidate as thumbnail.
+            // Do not use an MP4 URL as an img source.
+            thumb.src =
+                item.thumbnailUrl ||
+                (item.type === 'image' ? item.url : '');
 
-            title.textContent =
-                `${emoji} ${label} ${item.index} | ID: ${item.id || 'N/A'}`;
+            thumb.alt = '';
+            thumb.loading = 'lazy';
 
-            const meta = document.createElement('div');
-            meta.className = 'imd-meta';
+            const label =
+                document.createElement('div');
 
-            meta.textContent =
-                `${item.width} × ${item.height} | URL length: ${item.url.length}`;
+            label.className = 'imd-label';
 
-            info.append(title, meta);
+            label.textContent =
+                `${item.index}. ${item.type.toUpperCase()}`;
 
-            const actions = document.createElement('div');
+            const actions =
+                document.createElement('div');
+
             actions.className = 'imd-actions';
 
-            // Preview button
-            const previewButton = document.createElement('button');
-            previewButton.type = 'button';
+            // Preview button: mobile only
+            const previewButton =
+                document.createElement('button');
+
+            previewButton.className =
+                'imd-btn imd-preview-btn';
+
             previewButton.textContent = 'Preview';
 
-            // Open button
-            const openButton = document.createElement('button');
-            openButton.type = 'button';
+            previewButton.addEventListener(
+                'click',
+                event => {
+                    event.stopPropagation();
+                    openPreview(item);
+                }
+            );
+
+            // Open
+            const openButton =
+                document.createElement('button');
+
+            openButton.className = 'imd-btn';
             openButton.textContent = 'Open';
 
-            // Download button
-            const downloadButton = document.createElement('button');
-            downloadButton.type = 'button';
+            openButton.addEventListener(
+                'click',
+                event => {
+                    event.stopPropagation();
+                    openMedia(item);
+                }
+            );
+
+            // Download
+            const downloadButton =
+                document.createElement('button');
+
+            downloadButton.className = 'imd-btn';
             downloadButton.textContent = 'Download';
+
+            downloadButton.addEventListener(
+                'click',
+                event => {
+                    event.stopPropagation();
+                    downloadMedia(item);
+                }
+            );
 
             actions.append(
                 previewButton,
@@ -650,125 +1200,201 @@
                 downloadButton
             );
 
-            row.append(info, actions);
+            const inlinePreview =
+                document.createElement('div');
 
-            // Inline preview image
-            if (item.thumbnail) {
-                const preview = document.createElement('img');
+            inlinePreview.className =
+                'imd-preview-inline';
 
-                preview.className = 'imd-preview';
-                preview.alt = `${label} ${item.index} preview`;
-                preview.loading = 'lazy';
-                preview.src = item.thumbnail;
+            row.append(
+                thumb,
+                label,
+                actions,
+                inlinePreview
+            );
 
-                row.appendChild(preview);
+            // Desktop hover preview.
+            // The row is the hover target, not the preview itself.
+            row.addEventListener(
+                'pointerenter',
+                event => {
+                    if (event.pointerType !== 'mouse') {
+                        return;
+                    }
 
-                previewButton.addEventListener('click', event => {
-                    event.preventDefault();
-                    event.stopPropagation();
-
-                    togglePreview(
-                        row,
-                        preview,
-                        previewButton
+                    row.classList.add(
+                        'imd-previewing'
                     );
-                });
-            } else {
-                previewButton.disabled = true;
-                previewButton.title = 'No preview available';
-            }
 
-            // Open action
-            openButton.addEventListener('click', event => {
-                event.preventDefault();
-                event.stopPropagation();
+                    if (!inlinePreview.hasChildNodes()) {
+                        inlinePreview.appendChild(
+                            makePreviewElement(item)
+                        );
+                    }
+                }
+            );
 
-                openURL(item.url);
-            });
+            row.addEventListener(
+                'pointerleave',
+                event => {
+                    if (event.pointerType !== 'mouse') {
+                        return;
+                    }
 
-            // Download action
-            downloadButton.addEventListener('click', event => {
-                event.preventDefault();
-                event.stopPropagation();
+                    row.classList.remove(
+                        'imd-previewing'
+                    );
 
-                downloadURL(item, shortcode);
-            });
+                    const video =
+                        inlinePreview.querySelector('video');
 
-            content.appendChild(row);
+                    if (video) video.pause();
+                }
+            );
+
+            mediaList.appendChild(row);
         });
     }
 
-    // ------------------------------------------------------------
-    // Main scan
-    // ------------------------------------------------------------
+    // --------------------------------------------------
+    // Page update
+    // --------------------------------------------------
 
-    function scan() {
-        if (!panel || !panel.isConnected) {
-            createPanel();
-        }
-
-        const status = panel.querySelector('#imd-status');
-        const content = panel.querySelector('#imd-content');
-
-        status.textContent = 'Scanning current post...';
-        content.innerHTML = '';
-
-        media = [];
-
-        const shortcode = currentShortcode();
+    function updatePage() {
+        const shortcode = getShortcode();
 
         if (!shortcode) {
-            status.textContent =
-                'No post shortcode found. Open an Instagram post, Reel, or video.';
+            if (panel) {
+                panel.style.display = 'none';
+            }
+
+            currentShortcode = null;
+            currentMedia = [];
+
             return;
         }
 
-        const post = findPostData(shortcode);
+        if (shortcode === currentShortcode) {
+            if (panel) {
+                panel.style.display = 'flex';
+            }
+
+            return;
+        }
+
+        currentShortcode = shortcode;
+
+        createPanel();
+
+        panel.style.display = 'flex';
+
+        infoBox.textContent =
+            `Post: ${shortcode}\\n` +
+            `Download Mode: ${DOWNLOAD_MODE}`;
+
+        setStatus(
+            'Extracting Instagram media...'
+        );
+
+        mediaList.replaceChildren();
+
+        // Restore proven extraction method.
+        const post = extractPostFromPage(shortcode);
 
         if (!post) {
-            status.textContent =
-                `Could not find embedded data for shortcode: ${shortcode}`;
+            currentMedia = [];
+
+            renderMedia([]);
+
+            setStatus(
+                'Media not found.\\n' +
+                'The expected items array was not found ' +
+                'or the post shortcode did not match.',
+                'error'
+            );
+
+            console.warn(
+                '[IMD] Post not found:',
+                shortcode
+            );
+
             return;
         }
 
-        media = collectMedia(post);
+        currentMedia = collectMedia(post);
 
-        const videoCount = media.filter(
-            item => item.type === 'video'
-        ).length;
+        renderMedia(currentMedia);
 
-        const imageCount = media.filter(
-            item => item.type === 'image'
-        ).length;
+        if (!currentMedia.length) {
+            setStatus(
+                'Post found, but no supported media URLs were extracted.',
+                'error'
+            );
 
-        status.textContent =
-            `${videoCount} video(s), ${imageCount} image(s) found`;
+            console.warn(
+                '[IMD] Post object:',
+                post
+            );
 
-        renderMedia(shortcode);
+            return;
+        }
 
-        console.log(
-            '[Instagram Downloader] Current shortcode:',
-            shortcode
+        setStatus(
+            `${currentMedia.length} media item(s) found.\\n` +
+            `Download Mode: ${DOWNLOAD_MODE}`
         );
 
         console.log(
-            '[Instagram Downloader] Post data:',
-            post
-        );
-
-        console.log(
-            '[Instagram Downloader] Media in post order:',
-            media
+            '[IMD] Extracted media:',
+            currentMedia
         );
     }
 
-    // ------------------------------------------------------------
-    // Initialize
-    // ------------------------------------------------------------
+    // --------------------------------------------------
+    // SPA navigation
+    // --------------------------------------------------
 
-    addStyles();
-    createPanel();
+    let lastUrl = location.href;
 
-    setTimeout(scan, 1500);
+    function checkNavigation() {
+        if (location.href !== lastUrl) {
+            lastUrl = location.href;
 
+            currentShortcode = null;
+
+            setTimeout(updatePage, 700);
+        }
+    }
+
+    const observer = new MutationObserver(() => {
+        checkNavigation();
+    });
+
+    observer.observe(
+        document.documentElement,
+        {
+            childList: true,
+            subtree: true
+        }
+    );
+
+    window.addEventListener(
+        'popstate',
+        () => {
+            currentShortcode = null;
+            setTimeout(updatePage, 700);
+        }
+    );
+
+    // --------------------------------------------------
+    // Start
+    // --------------------------------------------------
+
+    setTimeout(updatePage, 1500);
+
+    console.log(
+        `[Instagram Media Saver] v${VERSION} loaded`,
+        'Download Mode:',
+        DOWNLOAD_MODE
+    );
 })();
